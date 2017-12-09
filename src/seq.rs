@@ -5,60 +5,48 @@ use kmer::{is_good_base, complement, normalize};
 
 /// A generic FASTX record that also abstracts over several logical operations
 /// that can be performed on nucleic acid sequences.
-pub struct SeqRecord<'a> {
-    pub id: &'a str,
+#[derive(Clone)]
+pub struct Seq<'a> {
     pub seq: Cow<'a, [u8]>,
-    pub qual: Option<&'a [u8]>,
     rev_seq: Option<Vec<u8>>,
 }
 
-impl<'a> SeqRecord<'a> {
-    pub fn new(id: &'a str, seq: Cow<'a, [u8]>, qual: Option<&'a [u8]>) -> Self {
-        SeqRecord { id: id, seq: seq, qual: qual, rev_seq: None }
+impl<'a> Seq<'a> {
+    pub fn new(seq: Cow<'a, [u8]>) -> Self {
+        Seq {seq: seq, rev_seq: None }
     }
 
     pub fn from_bytes(seq: &'a [u8]) -> Self {
-        SeqRecord { id: "", seq: Cow::Borrowed(seq), qual: None, rev_seq: None }
+        Seq { seq: Cow::Borrowed(seq), rev_seq: None }
     }
 
-    /// Given a SeqRecord and a quality cutoff, mask out low-quality bases with
+    /// Given the quality scores and a cutoff, mask out low-quality bases with
     /// `N` characters.
-    ///
-    /// Experimental.
-    pub fn quality_mask(self, ref score: u8) -> Self {
-        match self.qual {
-            None => self,
-            Some(quality) => {
-                // could maybe speed this up by doing a copy of base and then
-                // iterating though qual and masking?
-                let seq = self.seq
-                    .iter()
-                    .zip(quality.iter())
-                    .map(|(base, qual)| {
-                        if qual < score {
-                            b'N'
-                        } else {
-                            base.clone()
-                        }
-                    })
-                    .collect();
-                SeqRecord {
-                    id: self.id,
-                    seq: seq,
-                    qual: self.qual,
-                    rev_seq: None,
+    pub fn quality_mask(self, qual: &[u8], ref score: u8) -> Self {
+        // TODO: could maybe speed this up by doing a copy of base and then
+        // iterating though qual and masking?
+        let seq = self.seq
+            .iter()
+            .zip(qual.iter())
+            .map(|(base, qual)| {
+                if qual < score {
+                    b'N'
+                } else {
+                    base.clone()
                 }
-            },
+            })
+            .collect();
+        Seq {
+            seq: seq,
+            rev_seq: None,
         }
     }
 
     /// Capitalize everything and mask unknown bases to N
     pub fn normalize(self, iupac: bool) -> Self {
         let seq = normalize(&self.seq, iupac);
-        SeqRecord {
-            id: self.id,
+        Seq {
             seq: Cow::Owned(seq),
-            qual: self.qual,
             rev_seq: None,
         }
     }
@@ -156,13 +144,12 @@ impl<'a> Iterator for NuclKmer<'a> {
 
 #[test]
 fn test_quality_mask() {
-    let seq_rec = SeqRecord {
-        id: "",
+    let seq_rec = Seq {
         seq: Cow::Borrowed(&b"AGCT"[..]),
-        qual: Some(&b"AAA0"[..]),
         rev_seq: None,
     };
-    let filtered_rec = seq_rec.quality_mask('5' as u8);
+    let qual = &b"AAA0"[..];
+    let filtered_rec = seq_rec.quality_mask(qual, '5' as u8);
     assert_eq!(&filtered_rec.seq[..], &b"AGCN"[..]);
 }
 
@@ -170,7 +157,7 @@ fn test_quality_mask() {
 fn can_kmerize() {
     // test general function
     let mut i = 0;
-    for (_, k, _) in SeqRecord::from_bytes(b"AGCT").kmers(1, false) {
+    for (_, k, _) in Seq::from_bytes(b"AGCT").kmers(1, false) {
         match i {
             0 => assert_eq!(k, &b"A"[..]),
             1 => assert_eq!(k, &b"G"[..]),
@@ -183,7 +170,7 @@ fn can_kmerize() {
 
     // test that we skip over N's
     i = 0;
-    for (_, k, _) in SeqRecord::from_bytes(b"ACNGT").kmers(2, false) {
+    for (_, k, _) in Seq::from_bytes(b"ACNGT").kmers(2, false) {
         match i {
             0 => assert_eq!(k, &b"AC"[..]),
             1 => assert_eq!(k, &b"GT"[..]),
@@ -194,7 +181,7 @@ fn can_kmerize() {
 
     // test that we skip over N's and handle short kmers
     i = 0;
-    for (ix, k, _) in SeqRecord::from_bytes(b"ACNG").kmers(2, false) {
+    for (ix, k, _) in Seq::from_bytes(b"ACNG").kmers(2, false) {
         match i {
             0 => {
                 assert_eq!(ix, 0);
@@ -206,7 +193,7 @@ fn can_kmerize() {
     }
 
     // test that the minimum length works
-    for (_, k, _) in SeqRecord::from_bytes(b"AC").kmers(2, false) {
+    for (_, k, _) in Seq::from_bytes(b"AC").kmers(2, false) {
         assert_eq!(k, &b"AC"[..]);
     }
 }
@@ -215,7 +202,7 @@ fn can_kmerize() {
 fn can_canonicalize() {
     // test general function
     let mut i = 0;
-    for (_, k, is_c) in SeqRecord::from_bytes(b"AGCT").kmers(1, true) {
+    for (_, k, is_c) in Seq::from_bytes(b"AGCT").kmers(1, true) {
         match i {
             0 => {
                 assert_eq!(k, &b"A"[..]);
@@ -239,7 +226,7 @@ fn can_canonicalize() {
     }
 
     let mut i = 0;
-    for (_, k, _) in SeqRecord::from_bytes(b"AGCTA").kmers(2, true) {
+    for (_, k, _) in Seq::from_bytes(b"AGCTA").kmers(2, true) {
         match i {
             0 => assert_eq!(k, &b"AG"[..]),
             1 => assert_eq!(k, &b"GC"[..]),
@@ -251,7 +238,7 @@ fn can_canonicalize() {
     }
 
     let mut i = 0;
-    for (ix, k, _) in SeqRecord::from_bytes(b"AGNTA").kmers(2, true) {
+    for (ix, k, _) in Seq::from_bytes(b"AGNTA").kmers(2, true) {
         match i {
             0 => {
                 assert_eq!(ix, 0);

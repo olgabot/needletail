@@ -23,7 +23,27 @@ use std::str;
 use memchr::{memchr, memchr2};
 
 use buffer::{RecBuffer, ParseError};
-use seq::SeqRecord;
+use seq::Seq;
+
+pub struct SeqRecord<'a> {
+    pub id: &'a str,
+    pub seq: Cow<'a, [u8]>,
+    pub qual: Option<&'a [u8]>,
+}
+
+impl<'a> SeqRecord<'a> {
+    pub fn new(id: &'a str, seq: Cow<'a, [u8]>, qual: Option<&'a [u8]>) -> Self {
+        SeqRecord {
+            id: id,
+            seq: seq,
+            qual: qual,
+        }
+    }
+
+    pub fn seq(&self) -> Seq<'a> {
+        Seq::new(self.seq.clone())
+    }
+}
 
 #[cfg(feature = "gz")]
 use flate2::read::GzDecoder;
@@ -142,7 +162,7 @@ fn fasta_record<'a>(rb: &'a mut RecBuffer, validate: bool) -> Result<SeqRecord<'
         Err(_) => Err(ParseError::Invalid(String::from("FASTA header not UTF8"))),
     }?;
 
-    Ok(SeqRecord::new(id,strip_whitespace(fields[1], newlines), None))
+    Ok(SeqRecord::new(id, strip_whitespace(fields[1], newlines), None))
 }
 
 

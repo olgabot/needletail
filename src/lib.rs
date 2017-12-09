@@ -9,3 +9,7 @@ pub mod kmer;
 pub mod bitkmer;
 pub mod seq;
 mod buffer;
+
+pub use buffer::ParseError;
+pub use seq::Seq;
+pub use fastx::{SeqRecord, fastx_cli, fastx_stream};

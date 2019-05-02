@@ -27,7 +27,7 @@ use crate::util::{memchr_both, strip_whitespace, ParseError};
 #[cfg(feature = "compression")]
 use bzip2::read::BzDecoder;
 #[cfg(feature = "compression")]
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 #[cfg(feature = "compression")]
 use xz2::read::XzDecoder;
 #[cfg(feature = "compression")]
@@ -316,7 +316,7 @@ where
             return Err(ParseError::Invalid(String::from("Bad starting bytes")));
         }
         let _ = reader.seek(SeekFrom::Start(0));
-        let mut gz_reader = GzDecoder::new(reader);
+        let mut gz_reader = MultiGzDecoder::new(reader);
         fastx_reader(&mut gz_reader, None, callback, Some(type_callback))
     } else if first[0] == 0x42 {
         // bz files
